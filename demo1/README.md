@@ -108,9 +108,6 @@ demo1/
 │   │   └── writer.py
 │   ├── config.py            # 配置管理
 │   └── workflow.py          # 工作流编排
-├── examples/                # 示例输出
-│   ├── output_b2b_saas.md
-│   └── output_ivd.md
 ├── output/                  # 运行时输出目录
 ├── .env.example             # 环境变量模板
 ├── .gitignore

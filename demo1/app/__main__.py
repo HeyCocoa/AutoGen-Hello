@@ -29,20 +29,11 @@ def print_banner():
 
 
 def get_user_input() -> str:
-    """获取用户输入"""
+    """获取用户输入（单行输入）"""
     print("\n请描述您的业务场景（例如：B2B SaaS出海、IVD产品、电商获客等）：")
     print("=" * 80)
 
-    lines = []
-    print("💡 提示：输入完成后，单独一行输入 'END' 并回车结束输入\n")
-
-    while True:
-        line = input()
-        if line.strip().upper() == "END":
-            break
-        lines.append(line)
-
-    user_input = "\n".join(lines).strip()
+    user_input = input("> ").strip()
 
     if not user_input:
         print("\n❌ 错误：输入不能为空！")
