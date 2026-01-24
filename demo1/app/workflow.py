@@ -12,8 +12,8 @@ from autogen_ext.models.openai import OpenAIChatCompletionClient
 from autogen_core.models import ModelCapabilities
 
 from .config import Config
-from .utils import stream_messages
-from .utils.rich_ui import print_phase_header, print_success
+from .utils import stream_messages, StreamDisplayConfig
+from .utils.rich_ui import print_phase_header, print_success, start_loading, stop_loading
 from .agents import (
     create_coordinator,
     create_clarifier,
@@ -77,7 +77,7 @@ class TopicStrategyWorkflow:
         print("=" * 80 + "\n")
 
         # 阶段1：澄清阶段
-        print_phase_header("📝 阶段1：信息澄清", "bold yellow")
+        print_phase_header("📝 阶段1：信息确认", "bold yellow")
 
         clarification_prompt = f"""
 用户输入的业务场景：
@@ -99,9 +99,17 @@ Clarifier，请按照你的 system_message 中的要求，分析这个场景描�
         )
 
         # 使用流式输出运行澄清阶段
+        clarification_loading = start_loading("确认中，请稍候...")
         clarification_result = await stream_messages(
-            clarification_team.run_stream(task=clarification_prompt)
+            clarification_team.run_stream(task=clarification_prompt),
+            display=StreamDisplayConfig(
+                show_agent_headers=True,
+                show_content=False,
+                show_tools=True,
+                content_max_chars=200,
+            ),
         )
+        stop_loading(clarification_loading)
         print_success("✓ 澄清阶段完成")
 
         # 检查是否需要用户回答 - 查找Clarifier的消息
@@ -150,13 +158,21 @@ Analyst，请按照你的 system_message 进行深度业务分析，输出完整
 
         analysis_team = RoundRobinGroupChat(
             participants=[self.coordinator, self.analyst],
-            max_turns=2,  # Coordinator启动 -> Analyst输出
+            max_turns=4,  # Coordinator启动 -> Analyst工具调用 -> Analyst输出
         )
 
         # 使用流式输出运行分析阶段
+        analysis_loading = start_loading("分析中，请稍候...")
         analysis_result = await stream_messages(
-            analysis_team.run_stream(task=analysis_prompt)
+            analysis_team.run_stream(task=analysis_prompt),
+            display=StreamDisplayConfig(
+                show_agent_headers=True,
+                show_content=True,
+                show_tools=True,
+                content_max_chars=200,
+            ),
         )
+        stop_loading(analysis_loading)
         print_success("✓ 分析阶段完成")
 
         # 提取Analyst的分析结果（找Analyst的最后一次输出）
@@ -190,9 +206,17 @@ Strategist，请基于以下分析结果，按照你的 system_message 生成完
         )
 
         # 使用流式输出运行策略生成阶段
+        strategy_loading = start_loading("策略生成中，请稍候...")
         strategy_result = await stream_messages(
-            strategy_team.run_stream(task=strategy_prompt)
+            strategy_team.run_stream(task=strategy_prompt),
+            display=StreamDisplayConfig(
+                show_agent_headers=True,
+                show_content=True,
+                show_tools=True,
+                content_max_chars=200,
+            ),
         )
+        stop_loading(strategy_loading)
         print_success("✓ 策略生成阶段完成")
 
         # 提取Strategist的策略方案（找Strategist的最后一次输出）
@@ -234,9 +258,17 @@ Writer，请将以下内容按照你的 system_message 要求，整理成完整�
         )
 
         # 使用流式输出运行文档撰写阶段
+        writing_loading = start_loading("文档生成中，请稍候...")
         writing_result = await stream_messages(
-            writing_team.run_stream(task=writing_prompt)
+            writing_team.run_stream(task=writing_prompt),
+            display=StreamDisplayConfig(
+                show_agent_headers=True,
+                show_content=True,
+                show_tools=True,
+                content_max_chars=200,
+            ),
         )
+        stop_loading(writing_loading)
         print_success("✓ 文档生成阶段完成")
 
         # 提取Writer的最终文档（找Writer的最后一次输出）

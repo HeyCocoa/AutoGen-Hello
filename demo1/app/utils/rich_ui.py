@@ -120,3 +120,19 @@ def print_success(message: str):
         console.print(message, style="bold green")
     else:
         print(f"   {message}")
+
+
+def start_loading(message: str):
+    """开始加载提示"""
+    if RICH_AVAILABLE and console:
+        status = console.status(message, spinner="dots")
+        status.start()
+        return status
+    print(f"⏳ {message}")
+    return None
+
+
+def stop_loading(status):
+    """停止加载提示"""
+    if status is not None:
+        status.stop()

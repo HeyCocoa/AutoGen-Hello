@@ -2,8 +2,11 @@
 流式消息处理模块
 负责处理AutoGen的流式输出
 """
-from typing import AsyncGenerator
+from dataclasses import dataclass, field
+from typing import AsyncGenerator, Optional, Set
+
 from autogen_agentchat.base import TaskResult
+
 from .rich_ui import (
     print_agent_header,
     print_tool_call,
@@ -12,18 +15,42 @@ from .rich_ui import (
 )
 
 
-async def stream_messages(stream: AsyncGenerator) -> TaskResult:
+@dataclass
+class StreamDisplayConfig:
+    """流式输出显示配置"""
+    show_agent_headers: bool = True
+    show_content: bool = True
+    show_tools: bool = False
+    content_max_chars: Optional[int] = None
+    allowed_sources: Optional[Set[str]] = None
+    suppressed_sources: Set[str] = field(default_factory=set)
+
+
+def _truncate_text(text: str, max_chars: Optional[int]) -> str:
+    if not max_chars or len(text) <= max_chars:
+        return text
+    truncated = text[:max_chars].rstrip()
+    omitted = len(text) - len(truncated)
+    return f"{truncated}... (truncated {omitted} chars)"
+
+
+async def stream_messages(
+    stream: AsyncGenerator,
+    display: Optional[StreamDisplayConfig] = None,
+) -> TaskResult:
     """
     处理流式消息输出，支持工具调用显示
 
     Args:
         stream: AutoGen的消息流生成器
+        display: 显示配置
 
     Returns:
         最终的TaskResult
     """
     result = None
     current_agent = None
+    display = display or StreamDisplayConfig()
 
     async for message in stream:
         # 最终结果
@@ -37,8 +64,9 @@ async def stream_messages(stream: AsyncGenerator) -> TaskResult:
         # 显示Agent名称切换
         if hasattr(message, "source"):
             source = message.source
-            # 跳过user消息的header
-            if source != "user" and source != current_agent:
+            if source in display.suppressed_sources:
+                source = None
+            if display.show_agent_headers and source and source != "user" and source != current_agent:
                 current_agent = source
                 print_agent_header(current_agent)
 
@@ -48,18 +76,25 @@ async def stream_messages(stream: AsyncGenerator) -> TaskResult:
             if hasattr(message, "content") and isinstance(message.content, str):
                 # 跳过user消息的内容（已经在workflow中显示）
                 if hasattr(message, "source") and message.source != "user":
-                    print_content(message.content)
+                    source = message.source
+                    if source in display.suppressed_sources:
+                        continue
+                    if display.allowed_sources is not None and source not in display.allowed_sources:
+                        continue
+                    if display.show_content:
+                        content = _truncate_text(message.content, display.content_max_chars)
+                        print_content(content)
 
         elif message_type == "ToolCallRequestEvent":
             # 工具调用请求
-            if hasattr(message, "content") and isinstance(message.content, list):
+            if display.show_tools and hasattr(message, "content") and isinstance(message.content, list):
                 for item in message.content:
                     if hasattr(item, 'name') and hasattr(item, 'arguments'):
                         print_tool_call(item.name, item.arguments)
 
         elif message_type == "ToolCallExecutionEvent":
             # 工具执行结果
-            if hasattr(message, "content") and isinstance(message.content, list):
+            if display.show_tools and hasattr(message, "content") and isinstance(message.content, list):
                 for item in message.content:
                     if hasattr(item, 'content'):
                         print_tool_result(str(item.content))
