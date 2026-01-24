@@ -12,7 +12,8 @@ from autogen_ext.models.openai import OpenAIChatCompletionClient
 from autogen_core.models import ModelCapabilities
 
 from .config import Config
-from .utils import async_spinner
+from .utils import stream_messages
+from .utils.rich_ui import print_phase_header, print_success
 from .agents import (
     create_coordinator,
     create_clarifier,
@@ -76,7 +77,7 @@ class TopicStrategyWorkflow:
         print("=" * 80 + "\n")
 
         # 阶段1：澄清阶段
-        print("📝 阶段1：信息澄清")
+        print_phase_header("📝 阶段1：信息澄清", "bold yellow")
 
         clarification_prompt = f"""
 用户输入的业务场景：
@@ -97,11 +98,11 @@ Clarifier，请按照你的 system_message 中的要求，分析这个场景描�
             max_turns=2,  # 减少轮次：Coordinator启动 -> Clarifier输出
         )
 
-        # 使用spinner运行澄清阶段
-        async with async_spinner("Coordinator 和 Clarifier 正在分析场景", "✓ 澄清阶段完成"):
-            clarification_result = await clarification_team.run(
-                task=clarification_prompt
-            )
+        # 使用流式输出运行澄清阶段
+        clarification_result = await stream_messages(
+            clarification_team.run_stream(task=clarification_prompt)
+        )
+        print_success("✓ 澄清阶段完成")
 
         # 检查是否需要用户回答 - 查找Clarifier的消息
         clarifier_message = None
@@ -133,7 +134,7 @@ Clarifier，请按照你的 system_message 中的要求，分析这个场景描�
             print("   ✓ 信息充分，无需澄清\n")
 
         # 阶段2：分析阶段
-        print("\n📊 阶段2：业务分析")
+        print_phase_header("📊 阶段2：业务分析", "bold green")
 
         analysis_prompt = f"""
 业务场景信息：
@@ -152,9 +153,11 @@ Analyst，请按照你的 system_message 进行深度业务分析，输出完整
             max_turns=2,  # Coordinator启动 -> Analyst输出
         )
 
-        # 使用spinner运行分析阶段
-        async with async_spinner("Coordinator 和 Analyst 正在进行业务分析", "✓ 分析阶段完成"):
-            analysis_result = await analysis_team.run(task=analysis_prompt)
+        # 使用流式输出运行分析阶段
+        analysis_result = await stream_messages(
+            analysis_team.run_stream(task=analysis_prompt)
+        )
+        print_success("✓ 分析阶段完成")
 
         # 提取Analyst的分析结果（找Analyst的最后一次输出）
         analyst_output = None
@@ -168,7 +171,7 @@ Analyst，请按照你的 system_message 进行深度业务分析，输出完整
             analyst_output = str(analysis_result.messages[-1].content)
 
         # 阶段3：策略生成阶段
-        print("\n🎯 阶段3：策略生成")
+        print_phase_header("🎯 阶段3：策略生成", "bold magenta")
 
         strategy_prompt = f"""
 【任务分工】
@@ -186,9 +189,11 @@ Strategist，请基于以下分析结果，按照你的 system_message 生成完
             max_turns=2,  # Coordinator启动 -> Strategist输出
         )
 
-        # 使用spinner运行策略生成阶段
-        async with async_spinner("Coordinator 和 Strategist 正在生成策略", "✓ 策略生成阶段完成"):
-            strategy_result = await strategy_team.run(task=strategy_prompt)
+        # 使用流式输出运行策略生成阶段
+        strategy_result = await stream_messages(
+            strategy_team.run_stream(task=strategy_prompt)
+        )
+        print_success("✓ 策略生成阶段完成")
 
         # 提取Strategist的策略方案（找Strategist的最后一次输出）
         strategist_output = None
@@ -202,7 +207,7 @@ Strategist，请基于以下分析结果，按照你的 system_message 生成完
             strategist_output = str(strategy_result.messages[-1].content)
 
         # 阶段4：文档撰写阶段
-        print("\n📄 阶段4：文档生成")
+        print_phase_header("📄 阶段4：文档生成", "bold blue")
 
         writing_prompt = f"""
 【任务分工】
@@ -228,9 +233,11 @@ Writer，请将以下内容按照你的 system_message 要求，整理成完整�
             max_turns=2,  # Coordinator启动 -> Writer输出完整文档
         )
 
-        # 使用spinner运行文档撰写阶段
-        async with async_spinner("Coordinator 和 Writer 正在生成文档", "✓ 文档生成阶段完成"):
-            writing_result = await writing_team.run(task=writing_prompt)
+        # 使用流式输出运行文档撰写阶段
+        writing_result = await stream_messages(
+            writing_team.run_stream(task=writing_prompt)
+        )
+        print_success("✓ 文档生成阶段完成")
 
         # 提取Writer的最终文档（找Writer的最后一次输出）
         writer_output = None
