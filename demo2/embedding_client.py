@@ -3,10 +3,11 @@
 """
 import requests
 from typing import List, Union
+from chromadb.api.types import EmbeddingFunction, Documents
 from config import EMBEDDING_CONFIG
 
 
-class SiliconFlowEmbedding:
+class SiliconFlowEmbedding(EmbeddingFunction):
     """SiliconFlow Embedding API 客户端"""
 
     def __init__(self):
@@ -85,13 +86,13 @@ class SiliconFlowEmbedding:
             print(f"响应内容: {response.text}")
             raise
 
-    def __call__(self, input: Union[str, List[str]]) -> List[List[float]]:
+    def __call__(self, input: Documents) -> List[List[float]]:
         """
         兼容 Chromadb 的 EmbeddingFunction 接口
         注意：Chromadb 总是期望返回 List[List[float]]，即使输入是单个字符串
 
         Args:
-            input: 单个文本或文本列表
+            input: 单个文本或文本列表 (Documents type)
 
         Returns:
             向量列表（二维列表）

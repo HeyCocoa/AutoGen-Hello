@@ -1,22 +1,20 @@
-# Demo2: 科技媒体选题智能助手
+# Demo2: 科技媒体选题检索
 
 ## 📖 项目简介
 
-这是一个基于 **AutoGen 0.4.2** 框架和 **Chromadb** 向量数据库的智能选题系统，实现了"关键词 -> 向量化 -> RAG 查询"的完整流程。
+这是一个基于 **Chromadb** 向量数据库与 **SiliconFlow Embedding** 的检索型示例，实现了“关键词 → 向量化 → RAG 查询”的完整流程（仅检索，不包含 LLM 总结）。
 
 ### 核心功能
 
-1. **向量化检索**: 将用户输入的关键词向量化，在知识库中检索相关内容
-2. **智能选题**: 结合检索到的历史策略和行业知识，生成专业选题建议
-3. **手动 RAG 实现**: 直接调用 Chromadb API，无需依赖旧版 AutoGen 的 RAG 组件
+1. **向量化检索**: 将用户输入关键词向量化，在知识库中检索相关内容
+2. **检索证据输出**: 控制台打印每条结果的 id / 类别 / 相似度，便于验收
 
 ### 技术栈
 
-- **AutoGen 0.4.2**: 新版 Agent 框架（与 demo1 版本一致）
 - **Chromadb**: 向量数据库，存储和检索知识
 - **SiliconFlow API**: 中文 Embedding 模型 (BAAI/bge-large-zh-v1.5)
-- **DeepSeek API**: LLM 推理服务
 - **Rich**: 终端 UI 美化
+- **python-dotenv**: 环境变量管理
 
 ## 🚀 快速开始
 
@@ -28,7 +26,11 @@ pip install -r requirements.txt
 
 ### 2. 配置环境变量
 
-已在 `.env` 文件中配置好 API Keys，无需修改。
+在 `.env` 中配置 Embedding 相关变量：
+
+- `EMBEDDING_API_KEY`
+- `EMBEDDING_API_BASE`
+- `EMBEDDING_MODEL`（可选，默认 BAAI/bge-large-zh-v1.5）
 
 ### 3. 初始化知识库
 
@@ -49,19 +51,13 @@ python main.py
 
 ## 💡 使用示例
 
-### 基本查询
-
 ```
-🔍 请输入关键词: AI大模型
+🔍 请输入关键词: 区块链
 
 系统会：
-1. 向量化关键词 "AI大模型"
+1. 向量化关键词
 2. 在知识库中检索 Top-5 相关内容
-3. 生成选题建议，包括：
-   - 选题方向
-   - 内容要点
-   - 目标受众
-   - 预期效果
+3. 输出检索证据与格式化结果
 ```
 
 ## 📁 项目结构
@@ -69,7 +65,7 @@ python main.py
 ```
 demo2/
 ├── main.py                 # 主程序入口
-├── agents.py               # AutoGen agents 定义
+├── retriever.py            # 检索器（关键词->向量化->查询）
 ├── init_db.py              # 知识库初始化脚本
 ├── embedding_client.py     # SiliconFlow Embedding 客户端
 ├── config.py               # 配置文件
@@ -80,8 +76,7 @@ demo2/
 │   ├── knowledge_base_part1.json  # 知识数据 (1-20)
 │   ├── knowledge_base_part2.json  # 知识数据 (21-40)
 │   └── knowledge_base_part3.json  # 知识数据 (41-60)
-├── db/                     # Chromadb 数据库目录
-└── README.md               # 项目文档
+└── db/                     # Chromadb 数据库目录
 ```
 
 ## 🔧 核心组件
@@ -95,46 +90,13 @@ embedding_function = SiliconFlowEmbedding()
 embeddings = embedding_function.embed_documents(["AI大模型", "区块链"])
 ```
 
-### 2. RAG Assistant
+### 2. 检索器
 
-`agents.py` 中的 `RAGAssistant` 类手动实现了 RAG 逻辑：
-
-```python
-class RAGAssistant:
-    def retrieve_knowledge(self, keyword: str) -> str:
-        """从 Chromadb 检索相关知识"""
-        results = self.collection.query(
-            query_texts=[keyword],
-            n_results=5
-        )
-        return formatted_knowledge
-
-    async def generate_topic_suggestion(self, keyword: str) -> str:
-        """生成选题建议"""
-        knowledge = self.retrieve_knowledge(keyword)
-        response = await self.agent.on_messages([...])
-        return response.chat_message.content
-```
-
-### 3. AutoGen 0.4.2 Agent
-
-使用新版 API 创建 AssistantAgent：
+`retriever.py` 中的 `KnowledgeRetriever` 负责执行向量检索并格式化输出。
 
 ```python
-from autogen_agentchat.agents import AssistantAgent
-from autogen_ext.models.openai import OpenAIChatCompletionClient
-
-model_client = OpenAIChatCompletionClient(
-    model="deepseek-chat",
-    api_key="...",
-    base_url="https://api.deepseek.com/v1",
-)
-
-agent = AssistantAgent(
-    name="选题策划师",
-    model_client=model_client,
-    system_message="..."
-)
+retriever = KnowledgeRetriever()
+result = retriever.retrieve_knowledge("区块链", n_results=5)
 ```
 
 ## 📊 知识库内容
@@ -164,34 +126,9 @@ agent = AssistantAgent(
     ↓
 Chromadb 检索 (Top-5 相似结果)
     ↓
-RAGAssistant 格式化知识
-    ↓
-AssistantAgent 生成选题建议
+检索器格式化输出
     ↓
 Rich 终端美化输出
-```
-
-## ⚙️ 配置说明
-
-### LLM 配置 (DeepSeek)
-
-```python
-LLM_CONFIG = {
-    "config_list": [{
-        "model": "deepseek-chat",
-        "api_key": "sk-c43d04eb7c014c70a7a493cd4e2675ee",
-        "base_url": "https://api.deepseek.com/v1",
-    }],
-    "temperature": 0.7,
-}
-```
-
-### Embedding 配置 (SiliconFlow)
-
-```python
-EMBEDDING_API_URL = "https://api.siliconflow.cn/v1/embeddings"
-EMBEDDING_API_KEY = "sk-rpdclwdlhqaizqcygggqfzflkqdarcasgqgwxjrxqwkjpxhq"
-EMBEDDING_MODEL = "BAAI/bge-large-zh-v1.5"
 ```
 
 ## 🐛 常见问题
@@ -205,37 +142,23 @@ EMBEDDING_MODEL = "BAAI/bge-large-zh-v1.5"
 
 **解决**: 运行 `python init_db.py` 初始化知识库。
 
-### 2. API 调用失败
+### 2. Embedding API 调用失败
 
-检查 `.env` 文件中的 API Keys 是否正确。
+检查 `.env` 文件中的 `EMBEDDING_API_KEY` / `EMBEDDING_API_BASE` 是否正确。
 
 ### 3. 检索结果不准确
 
-- 调整 `n_results` 参数（在 `agents.py` 中增加检索数量）
+- 调整 `n_results` 参数（在 `retriever.py` 中）
 - 添加更多相关知识到 `data/` 目录，重新运行 `init_db.py`
-
-## 📝 版本说明
-
-**与 demo1 的区别**：
-- demo1: 使用 autogen 0.4.2 的多 Agent 协作
-- demo2: 使用 autogen 0.4.2 + 手动实现 RAG 检索
-
-**为什么不使用 pyautogen 0.2.x**：
-- autogen 0.4.2 是新架构，与 demo1 保持一致
-- 手动实现 RAG 更灵活，可以自定义检索逻辑
-- 避免版本冲突，无需单独的虚拟环境
 
 ## 📝 扩展建议
 
 1. **增加知识库**: 在 `data/` 目录添加更多 JSON 文件
-2. **优化检索**: 调整 `chunk_token_size` 和 `n_results` 参数
-3. **多轮对话**: 修改 `human_input_mode` 支持交互式对话
-4. **Web 界面**: 使用 Gradio/Streamlit 构建 Web UI
+2. **优化检索**: 调整 `n_results` 参数
+3. **Web 界面**: 使用 Gradio/Streamlit 构建 Web UI
 
 ## 📄 License
 
 MIT License
 
 ## 👥 作者
-
-AutoGen + Chromadb Demo Project

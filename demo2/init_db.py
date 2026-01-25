@@ -1,10 +1,11 @@
 """
-知识库初始化脚本（简化版，无 emoji）
+知识库初始化脚本
 将 JSON 数据向量化并存入 Chromadb
 """
 import json
 import os
 import sys
+import shutil
 from pathlib import Path
 import chromadb
 from chromadb.config import Settings
@@ -34,6 +35,10 @@ def load_knowledge_data():
 
 def init_chromadb():
     """初始化 Chromadb 并插入数据"""
+    # 清理旧数据库目录，保证只保留最新一份
+    if CHROMADB_PATH.exists():
+        shutil.rmtree(CHROMADB_PATH)
+
     # 创建 Chromadb 客户端
     client = chromadb.PersistentClient(
         path=str(CHROMADB_PATH),
