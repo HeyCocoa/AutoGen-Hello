@@ -14,80 +14,64 @@ from selenium.webdriver.support import expected_conditions as EC
 from browser_utils import create_browser, random_delay, close_intro_overlay
 
 
-def get_detail_by_reg_number(driver, wait, reg_number):
-    """通过注册证编号搜索并获取详情"""
-    detail_data = {}
-
-    # 访问首页
+def init_search_page(driver, wait, first_reg_number):
+    """用第一个注册证编号初始化到搜索结果页"""
     driver.get('https://www.nmpa.gov.cn/datasearch/home-index.html')
-    random_delay(4, 6)
+    random_delay(3, 5)
     close_intro_overlay(driver)
 
     # 点击医疗器械分类
-    try:
-        device_tab = wait.until(EC.element_to_be_clickable(
-            (By.XPATH, "//a[contains(@class,'yiliaoqixie')]")))
-        driver.execute_script("arguments[0].click();", device_tab)
-        random_delay(2, 3)
-        close_intro_overlay(driver)
-    except:
-        return detail_data
+    device_tab = wait.until(EC.element_to_be_clickable(
+        (By.XPATH, "//a[contains(@class,'yiliaoqixie')]")))
+    driver.execute_script("arguments[0].click();", device_tab)
+    random_delay(2, 3)
+    close_intro_overlay(driver)
 
     # 点击境内医疗器械（注册）
-    try:
-        domestic_link = wait.until(EC.presence_of_element_located(
-            (By.XPATH, "//a[@title='境内医疗器械（注册）']")))
-        driver.execute_script("arguments[0].click();", domestic_link)
-        random_delay(2, 3)
-    except:
-        return detail_data
+    domestic_link = wait.until(EC.presence_of_element_located(
+        (By.XPATH, "//a[@title='境内医疗器械（注册）']")))
+    driver.execute_script("arguments[0].click();", domestic_link)
+    random_delay(2, 3)
 
-    # 输入注册证编号搜索
-    try:
-        search_input = wait.until(EC.presence_of_element_located(
-            (By.CSS_SELECTOR, ".search-input input.el-input__inner")))
-        driver.execute_script("""
-            var input = arguments[0];
-            input.focus();
-            input.value = arguments[1];
-            input.dispatchEvent(new Event('input', { bubbles: true }));
-        """, search_input, reg_number)
-        random_delay(1, 2)
-    except:
-        return detail_data
+    # 用第一个注册证编号搜索进入结果页
+    search_input = wait.until(EC.presence_of_element_located(
+        (By.CSS_SELECTOR, ".search-input input.el-input__inner")))
+    driver.execute_script("""
+        var input = arguments[0];
+        input.focus();
+        input.value = arguments[1];
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+    """, search_input, first_reg_number)
+    random_delay(1, 2)
 
-    # 点击搜索
-    try:
-        search_btn = wait.until(EC.element_to_be_clickable(
-            (By.CSS_SELECTOR, ".el-input-group__append button")))
-        driver.execute_script("arguments[0].click();", search_btn)
-        random_delay(4, 6)
-    except:
-        return detail_data
+    search_btn = wait.until(EC.element_to_be_clickable(
+        (By.CSS_SELECTOR, ".el-input-group__append button")))
+    driver.execute_script("arguments[0].click();", search_btn)
+    random_delay(3, 5)
 
-    # 等待跳转
-    try:
-        wait.until(EC.url_contains("search-result.html"))
-        random_delay(2, 3)
-    except:
-        return detail_data
+    wait.until(EC.url_contains("search-result.html"))
+    print(f"   搜索页初始化完成")
 
-    # 等待表格并点击详情
+
+def get_first_detail(driver, wait):
+    """获取第一条的详情（初始化后直接点详情）"""
+    detail_data = {}
+
     try:
         wait.until(EC.presence_of_element_located(
             (By.CSS_SELECTOR, ".el-table__body tbody tr")))
+        random_delay(0.5, 1)
         row = driver.find_element(By.CSS_SELECTOR, ".el-table__body tbody tr")
         detail_btn = row.find_element(By.CSS_SELECTOR, "td:last-child button, td:last-child a")
         driver.execute_script("arguments[0].click();", detail_btn)
-        random_delay(3, 5)
+        random_delay(2, 4)
     except:
         return detail_data
 
-    # 获取详情页数据
     try:
         wait.until(EC.presence_of_element_located(
             (By.CSS_SELECTOR, "#dataTable tbody tr")))
-        random_delay(1, 2)
+        random_delay(0.5, 1)
 
         rows = driver.find_elements(By.CSS_SELECTOR, "#dataTable tbody tr")
         for row in rows:
@@ -102,10 +86,95 @@ def get_detail_by_reg_number(driver, wait, reg_number):
     except Exception as e:
         print(f"      获取详情失败: {e}")
 
+    driver.back()
+    random_delay(1, 2)
+
+    return detail_data
+
+
+def search_and_get_detail(driver, wait, reg_number):
+    """在搜索结果页直接搜索并获取详情（不离开页面）"""
+    detail_data = {}
+
+    # 清空并输入新的注册证编号（搜索结果页用 input-with-select）
+    try:
+        search_input = wait.until(EC.presence_of_element_located(
+            (By.CSS_SELECTOR, ".input-with-select input.el-input__inner")))
+        driver.execute_script("""
+            var input = arguments[0];
+            input.focus();
+            input.value = '';
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.value = arguments[1];
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+        """, search_input, reg_number)
+        random_delay(0.5, 1)
+    except:
+        return detail_data
+
+    # 点击搜索（搜索结果页的按钮）
+    try:
+        search_btn = wait.until(EC.element_to_be_clickable(
+            (By.CSS_SELECTOR, ".input-with-select .el-input-group__append button")))
+        driver.execute_script("arguments[0].click();", search_btn)
+        random_delay(2, 4)
+    except:
+        return detail_data
+
+    # 等待表格刷新并点击详情
+    try:
+        wait.until(EC.presence_of_element_located(
+            (By.CSS_SELECTOR, ".el-table__body tbody tr")))
+        random_delay(0.5, 1)
+        row = driver.find_element(By.CSS_SELECTOR, ".el-table__body tbody tr")
+        detail_btn = row.find_element(By.CSS_SELECTOR, "td:last-child button, td:last-child a")
+        driver.execute_script("arguments[0].click();", detail_btn)
+        random_delay(2, 4)
+    except:
+        return detail_data
+
+    # 获取详情页数据
+    try:
+        wait.until(EC.presence_of_element_located(
+            (By.CSS_SELECTOR, "#dataTable tbody tr")))
+        random_delay(0.5, 1)
+
+        rows = driver.find_elements(By.CSS_SELECTOR, "#dataTable tbody tr")
+        for row in rows:
+            tds = row.find_elements(By.CSS_SELECTOR, "td")
+            if len(tds) >= 2:
+                key_elem = tds[0].find_element(By.CSS_SELECTOR, ".cell")
+                val_elem = tds[1].find_element(By.CSS_SELECTOR, ".cell")
+                key = key_elem.text.strip()
+                value = val_elem.text.strip()
+                if key and key != "注":
+                    detail_data[key] = value
+    except Exception as e:
+        print(f"      获取详情失败: {e}")
+
+    # 返回搜索结果页
+    driver.back()
+    random_delay(1, 2)
+
     return detail_data
 
 
 def main():
+    output_file = "nmpa_data.xlsx"
+
+    # 读取已有数据（断点续传）
+    existing_reg_numbers = set()
+    all_data = []
+    try:
+        df_existing = pd.read_excel(output_file)
+        all_data = df_existing.to_dict('records')
+        existing_reg_numbers = set(df_existing["注册证编号"].tolist())
+        print(f"已加载 {len(existing_reg_numbers)} 条已采集数据")
+    except FileNotFoundError:
+        print("未找到已有数据，从头开始采集")
+    except Exception as e:
+        print(f"读取已有数据失败: {e}，从头开始采集")
+
     # 读取第一阶段结果（支持多sheet）
     input_file = "phase1_result.xlsx"
     try:
@@ -121,27 +190,53 @@ def main():
         print("请先运行 phase1_collect.py 或准备好筛选后的Excel文件")
         return
 
-    reg_numbers = df_input["注册证编号"].tolist()
     # 保留搜索关键词映射
     keyword_map = dict(zip(df_input["注册证编号"], df_input["搜索关键词"]))
     # 保留产品ID映射
     product_id_map = dict(zip(df_input["注册证编号"], df_input.get("产品ID", [None]*len(df_input))))
 
+    # 过滤掉已采集的
+    reg_numbers = [r for r in df_input["注册证编号"].tolist() if r not in existing_reg_numbers]
+    total_count = len(df_input)
+
     print("=" * 60)
     print("第二阶段：获取详情页数据")
-    print(f"共 {len(reg_numbers)} 条记录待处理")
+    print(f"总计 {total_count} 条，已采集 {len(existing_reg_numbers)} 条，待处理 {len(reg_numbers)} 条")
     print("=" * 60)
+
+    if not reg_numbers:
+        print("所有数据已采集完成！")
+        return
 
     driver = create_browser(version_main=143)
     wait = WebDriverWait(driver, 30)
 
-    all_data = []
+    # 用第一条初始化搜索页
+    first_reg = reg_numbers[0]
+    try:
+        init_search_page(driver, wait, first_reg)
+    except Exception as e:
+        print(f"初始化失败: {e}")
+        driver.quit()
+        return
 
     try:
-        for i, reg_no in enumerate(reg_numbers):
-            print(f"\n[{i+1}/{len(reg_numbers)}] {reg_no}")
+        # 第一条：直接点详情
+        print(f"\n[{len(existing_reg_numbers)+1}/{total_count}] {first_reg}")
+        detail_data = get_first_detail(driver, wait)
+        if detail_data:
+            detail_data["搜索关键词"] = keyword_map.get(first_reg, "")
+            detail_data["产品ID"] = product_id_map.get(first_reg, "")
+            all_data.append(detail_data)
+            print(f"   OK: {detail_data.get('产品名称', 'N/A')[:40]}...")
+        else:
+            print(f"   FAILED")
 
-            detail_data = get_detail_by_reg_number(driver, wait, reg_no)
+        # 后续条目：在搜索结果页直接换编号搜索
+        for i, reg_no in enumerate(reg_numbers[1:], start=1):
+            print(f"\n[{len(existing_reg_numbers)+i+1}/{total_count}] {reg_no}")
+
+            detail_data = search_and_get_detail(driver, wait, reg_no)
 
             if detail_data:
                 detail_data["搜索关键词"] = keyword_map.get(reg_no, "")
@@ -153,18 +248,17 @@ def main():
 
             # 每10条保存一次
             if (i + 1) % 10 == 0:
-                save_data(all_data)
+                save_data(all_data, output_file)
                 print(f"   [已保存 {len(all_data)} 条]")
 
             # 延迟
-            if i < len(reg_numbers) - 1:
-                random_delay(3, 6)
+            random_delay(1, 2)
 
         # 最终保存
-        save_data(all_data)
+        save_data(all_data, output_file)
         print(f"\n{'='*60}")
         print(f"采集完成！共 {len(all_data)} 条数据")
-        print(f"已保存到 nmpa_data.xlsx")
+        print(f"已保存到 {output_file}")
         print(f"{'='*60}")
 
     finally:
