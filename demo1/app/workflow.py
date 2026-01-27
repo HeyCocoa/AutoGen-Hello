@@ -4,9 +4,7 @@
 """
 import os
 from datetime import datetime
-from typing import List, Dict, Any
 
-from autogen_agentchat.agents import AssistantAgent
 from autogen_agentchat.teams import RoundRobinGroupChat
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 from autogen_core.models import ModelCapabilities
@@ -21,6 +19,32 @@ from .agents import (
     create_strategist,
     create_writer,
 )
+from .prompts import (
+    get_clarification_prompt,
+    get_analysis_prompt,
+    get_strategy_prompt,
+    get_writing_prompt,
+)
+
+
+def _extract_agent_output(result, agent_name: str, fallback_warning: str) -> str:
+    """
+    从消息结果中提取指定智能体的最后一次输出
+
+    Args:
+        result: 团队运行结果
+        agent_name: 智能体名称
+        fallback_warning: 未找到输出时的警告信息
+
+    Returns:
+        智能体输出内容
+    """
+    for msg in reversed(result.messages):
+        if hasattr(msg, 'source') and msg.source == agent_name:
+            return str(msg.content)
+
+    print(f"   {fallback_warning}")
+    return str(result.messages[-1].content)
 
 
 class TopicStrategyWorkflow:
@@ -79,18 +103,7 @@ class TopicStrategyWorkflow:
         # 阶段1：澄清阶段
         print_phase_header("📝 阶段1：信息确认", "bold yellow")
 
-        clarification_prompt = f"""
-用户输入的业务场景：
-{user_input}
-
-【任务分工】
-- Coordinator：你负责协调流程，确保 Clarifier 完成任务后汇报结果
-- Clarifier：你负责分析场景描述的完整性，判断信息是否充分
-
-Clarifier，请按照你的 system_message 中的要求，分析这个场景描述。
-如果需要澄清，请输出【需要澄清】标记和具体问题；
-如果信息充分，请输出【信息充分】标记。
-"""
+        clarification_prompt = get_clarification_prompt(user_input)
 
         # 创建澄清阶段的团队
         clarification_team = RoundRobinGroupChat(
@@ -112,12 +125,10 @@ Clarifier，请按照你的 system_message 中的要求，分析这个场景描�
         stop_loading(clarification_loading)
         print_success("✓ 澄清阶段完成")
 
-        # 检查是否需要用户回答 - 查找Clarifier的消息
-        clarifier_message = None
-        for msg in reversed(clarification_result.messages):
-            if hasattr(msg, 'source') and msg.source == "Clarifier":
-                clarifier_message = str(msg.content)
-                break
+        # 检查是否需要用户回答
+        clarifier_message = _extract_agent_output(
+            clarification_result, "Clarifier", ""
+        )
 
         additional_info = ""
         if clarifier_message and "【需要澄清】" in clarifier_message:
@@ -144,17 +155,7 @@ Clarifier，请按照你的 system_message 中的要求，分析这个场景描�
         # 阶段2：分析阶段
         print_phase_header("📊 阶段2：业务分析", "bold green")
 
-        analysis_prompt = f"""
-业务场景信息：
-原始输入：{user_input}
-补充信息：{additional_info if additional_info else "无"}
-
-【任务分工】
-- Coordinator：你负责协调流程，确保 Analyst 完成深度分析
-- Analyst：你负责进行深度业务分析
-
-Analyst，请按照你的 system_message 进行深度业务分析，输出完整的分析报告。
-"""
+        analysis_prompt = get_analysis_prompt(user_input, additional_info)
 
         analysis_team = RoundRobinGroupChat(
             participants=[self.coordinator, self.analyst],
@@ -175,30 +176,14 @@ Analyst，请按照你的 system_message 进行深度业务分析，输出完整
         stop_loading(analysis_loading)
         print_success("✓ 分析阶段完成")
 
-        # 提取Analyst的分析结果（找Analyst的最后一次输出）
-        analyst_output = None
-        for msg in reversed(analysis_result.messages):
-            if hasattr(msg, 'source') and msg.source == "Analyst":
-                analyst_output = str(msg.content)
-                break
-
-        if not analyst_output:
-            print("   ⚠️  警告：未找到 Analyst 的输出，使用最后一条消息")
-            analyst_output = str(analysis_result.messages[-1].content)
+        analyst_output = _extract_agent_output(
+            analysis_result, "Analyst", "⚠️  警告：未找到 Analyst 的输出，使用最后一条消息"
+        )
 
         # 阶段3：策略生成阶段
         print_phase_header("🎯 阶段3：策略生成", "bold magenta")
 
-        strategy_prompt = f"""
-【任务分工】
-- Coordinator：你负责协调流程，确保 Strategist 完成策略制定
-- Strategist：你负责基于分析结果生成详细的选题策略
-
-Strategist，请基于以下分析结果，按照你的 system_message 生成完整的选题策略方案。
-
-分析结果：
-{analyst_output}
-"""
+        strategy_prompt = get_strategy_prompt(analyst_output)
 
         strategy_team = RoundRobinGroupChat(
             participants=[self.coordinator, self.strategist],
@@ -219,38 +204,14 @@ Strategist，请基于以下分析结果，按照你的 system_message 生成完
         stop_loading(strategy_loading)
         print_success("✓ 策略生成阶段完成")
 
-        # 提取Strategist的策略方案（找Strategist的最后一次输出）
-        strategist_output = None
-        for msg in reversed(strategy_result.messages):
-            if hasattr(msg, 'source') and msg.source == "Strategist":
-                strategist_output = str(msg.content)
-                break
-
-        if not strategist_output:
-            print("   ⚠️  警告：未找到 Strategist 的输出，使用最后一条消息")
-            strategist_output = str(strategy_result.messages[-1].content)
+        strategist_output = _extract_agent_output(
+            strategy_result, "Strategist", "⚠️  警告：未找到 Strategist 的输出，使用最后一条消息"
+        )
 
         # 阶段4：文档撰写阶段
         print_phase_header("📄 阶段4：文档生成", "bold blue")
 
-        writing_prompt = f"""
-【任务分工】
-- Coordinator：你负责协调流程，确保 Writer 完成文档撰写
-- Writer：你负责将所有内容整理成完整的 Markdown 策略文档
-
-Writer，请将以下内容按照你的 system_message 要求，整理成完整的 Markdown 文档。
-
-业务场景：{user_input}
-补充信息：{additional_info if additional_info else "无"}
-
-分析结果：
-{analyst_output}
-
-策略方案：
-{strategist_output}
-
-请输出完整的 Markdown 文档，包含所有必要的章节和内容。
-"""
+        writing_prompt = get_writing_prompt(user_input, additional_info, analyst_output, strategist_output)
 
         writing_team = RoundRobinGroupChat(
             participants=[self.coordinator, self.writer],
@@ -271,16 +232,9 @@ Writer，请将以下内容按照你的 system_message 要求，整理成完整�
         stop_loading(writing_loading)
         print_success("✓ 文档生成阶段完成")
 
-        # 提取Writer的最终文档（找Writer的最后一次输出）
-        writer_output = None
-        for msg in reversed(writing_result.messages):
-            if hasattr(msg, 'source') and msg.source == "Writer":
-                writer_output = str(msg.content)
-                break
-
-        if not writer_output:
-            print("   ⚠️  警告：未找到 Writer 的输出，使用最后一条消息")
-            writer_output = str(writing_result.messages[-1].content)
+        writer_output = _extract_agent_output(
+            writing_result, "Writer", "⚠️  警告：未找到 Writer 的输出，使用最后一条消息"
+        )
 
         # 保存文档
         output_path = self._save_document(writer_output)

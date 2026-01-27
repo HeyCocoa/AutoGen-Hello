@@ -8,6 +8,9 @@ python-dotenv==1.0.0
 # OpenAI SDK
 openai>=1.12.0
 
+# 智谱AI SDK（用于联网搜索）
+zai-sdk>=0.2.0
+
 # 终端UI
 rich>=13.0.0
 
