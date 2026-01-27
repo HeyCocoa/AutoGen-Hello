@@ -33,21 +33,39 @@ The system uses **4 distinct phases** with `RoundRobinGroupChat` teams:
 
 **Key Implementation Detail**: Each phase creates a new `RoundRobinGroupChat` with `max_turns=3`. Results from previous phases are passed via prompt context, not through persistent conversation state.
 
-### Agent System Messages
+### Prompt Management
 
-Each agent in `app/agents/` has a detailed `system_message` that defines:
-- Role and responsibilities
-- Output format requirements (especially for Clarifier, Analyst, Strategist)
-- Specific instructions (e.g., Clarifier outputs "【需要澄清】" or "【信息充分】")
+All prompts are centralized in `app/prompts.py`:
 
-When modifying agent behavior, edit the `system_message` in the corresponding agent file.
+**Agent System Messages (constants):**
+- `COORDINATOR_SYSTEM_MESSAGE`
+- `CLARIFIER_SYSTEM_MESSAGE`
+- `ANALYST_SYSTEM_MESSAGE`
+- `STRATEGIST_SYSTEM_MESSAGE`
+- `WRITER_SYSTEM_MESSAGE`
+
+**Workflow Task Prompts (functions):**
+- `get_clarification_prompt(user_input)`
+- `get_analysis_prompt(user_input, additional_info)`
+- `get_strategy_prompt(analyst_output)`
+- `get_writing_prompt(user_input, additional_info, analyst_output, strategist_output)`
+
+When modifying agent behavior, edit the prompts in `app/prompts.py`. Agent files in `app/agents/` only handle instance creation.
 
 ### Model Client Configuration
 
 The system uses `OpenAIChatCompletionClient` from `autogen-ext[openai]`, which is **compatible with any OpenAI-format API**:
-- Default: DeepSeek API (`https://api.deepseek.com/v1`)
-- Also supports: OpenAI, Azure OpenAI, or any compatible service
+- Default: 智谱AI GLM-4.7-flash (`https://open.bigmodel.cn/api/paas/v4`)
+- Also supports: DeepSeek, OpenAI, Azure OpenAI, or any compatible service
 - Configuration via `.env`: `OPENAI_API_KEY`, `OPENAI_API_BASE`, `MODEL_NAME`
+
+### Web Search (联网搜索)
+
+The Analyst agent can perform real web searches using 智谱AI's web search API:
+- Enabled via `ZHIPU_WEB_SEARCH_ENABLED=true` in `.env`
+- Uses `zai-sdk` to call GLM-4.7-flash with web_search tool
+- Falls back to mock results if disabled or using non-智谱 API
+- Search engine configurable: `ZHIPU_SEARCH_ENGINE=search_std` (or `search_pro`)
 
 ## Development Commands
 
@@ -95,17 +113,20 @@ make clean  # Removes __pycache__, *.pyc, *.log files
 
 Edit `.env`:
 ```env
-# For DeepSeek (default)
+# For 智谱AI GLM-4.7 (default, with web search support)
+OPENAI_API_KEY=your-zhipu-api-key
+OPENAI_API_BASE=https://open.bigmodel.cn/api/paas/v4
+MODEL_NAME=glm-4.7-flash
+ZHIPU_WEB_SEARCH_ENABLED=true
+ZHIPU_SEARCH_ENGINE=search_std
+
+# For DeepSeek
 OPENAI_API_BASE=https://api.deepseek.com/v1
 MODEL_NAME=deepseek-chat
 
 # For OpenAI
 OPENAI_API_BASE=https://api.openai.com/v1
 MODEL_NAME=gpt-4
-
-# For other compatible services
-OPENAI_API_BASE=https://your-service.com/v1
-MODEL_NAME=your-model-name
 ```
 
 ### Output Directory
@@ -148,3 +169,8 @@ Check `examples/` directory for reference outputs showing expected document stru
 ## Dependencies Version Note
 
 The project uses AutoGen 0.4.2 (not 0.4.0, which had GPL dependency issues). If upgrading AutoGen, ensure compatibility with the `RoundRobinGroupChat` and `OpenAIChatCompletionClient` APIs.
+
+Key dependencies:
+- `autogen-agentchat==0.4.2` - Multi-agent framework
+- `autogen-ext[openai]==0.4.2` - OpenAI-compatible model client
+- `zai-sdk>=0.2.0` - 智谱AI SDK for web search
