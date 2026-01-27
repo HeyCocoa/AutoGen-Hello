@@ -154,6 +154,12 @@ AutoGen's `Console` wrapper is used for streaming output: `await Console(team.ru
 
 `Config.validate()` is called at workflow initialization and will raise `ValueError` if `OPENAI_API_KEY` is missing.
 
+### Structured Output (Reserved)
+
+`app/models.py` defines a `StrategyDocument` Pydantic model for structured JSON output. Currently not used because glm-4.7-flash struggles with strict JSON generation. When switching to a more capable model (e.g., GPT-4, Claude), consider:
+1. Update `WRITER_SYSTEM_MESSAGE` in `prompts.py` to require JSON output
+2. Use `StrategyDocument.to_markdown()` to render the validated data
+
 ## Testing the System
 
 Run with example inputs:
