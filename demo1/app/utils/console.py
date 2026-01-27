@@ -34,6 +34,11 @@ def _truncate_text(text: str, max_chars: Optional[int]) -> str:
     return f"{truncated}... (truncated {omitted} chars)"
 
 
+def _make_tool_call_key(name: str, arguments: str) -> str:
+    """生成工具调用的唯一标识"""
+    return f"{name}:{arguments}"
+
+
 async def stream_messages(
     stream: AsyncGenerator,
     display: Optional[StreamDisplayConfig] = None,
@@ -51,6 +56,10 @@ async def stream_messages(
     result = None
     current_agent = None
     display = display or StreamDisplayConfig()
+
+    # 去重：记录已显示的工具调用和结果
+    shown_tool_calls: Set[str] = set()
+    shown_tool_results: Set[str] = set()
 
     async for message in stream:
         # 最终结果
@@ -86,22 +95,29 @@ async def stream_messages(
                         print_content(content)
 
         elif message_type == "ToolCallRequestEvent":
-            # 工具调用请求
+            # 工具调用请求（去重）
             if display.show_tools and hasattr(message, "content") and isinstance(message.content, list):
                 for item in message.content:
                     if hasattr(item, 'name') and hasattr(item, 'arguments'):
-                        print_tool_call(item.name, item.arguments)
+                        key = _make_tool_call_key(item.name, item.arguments)
+                        if key not in shown_tool_calls:
+                            shown_tool_calls.add(key)
+                            print_tool_call(item.name, item.arguments)
 
         elif message_type == "ToolCallExecutionEvent":
-            # 工具执行结果
+            # 工具执行结果（去重）
             if display.show_tools and hasattr(message, "content") and isinstance(message.content, list):
                 for item in message.content:
                     if hasattr(item, 'content'):
-                        print_tool_result(str(item.content))
+                        result_str = str(item.content)
+                        # 用内容的前200字符作为去重key（避免完全相同的结果重复显示）
+                        result_key = result_str[:200]
+                        if result_key not in shown_tool_results:
+                            shown_tool_results.add(result_key)
+                            print_tool_result(result_str)
 
         elif message_type == "ToolCallSummaryMessage":
-            # 工具调用摘要（可选择是否显示）
-            # 这个消息通常是工具结果的总结，可以选择不显示以避免重复
+            # 工具调用摘要 - 完全忽略，避免重复
             pass
 
     return result

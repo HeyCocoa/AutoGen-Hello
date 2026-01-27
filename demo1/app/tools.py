@@ -37,10 +37,23 @@ def web_search(query: Annotated[str, "搜索关键词"]) -> Annotated[str, "搜�
 
     Returns:
         搜索结果摘要
+
+    Raises:
+        SystemExit: 联网搜索未启用或调用失败时退出程序
     """
-    if Config.is_zhipu_api() and Config.ZHIPU_WEB_SEARCH_ENABLED:
-        return _zhipu_web_search(query)
-    return _mock_web_search(query)
+    if not Config.is_zhipu_api():
+        print("\n[错误] web_search 调用失败：当前未使用智谱AI API，联网搜索不可用")
+        print("请在 .env 中配置智谱AI API：")
+        print("  OPENAI_API_BASE=https://open.bigmodel.cn/api/paas/v4")
+        print("  OPENAI_API_KEY=your-zhipu-api-key")
+        raise SystemExit(1)
+
+    if not Config.ZHIPU_WEB_SEARCH_ENABLED:
+        print("\n[错误] web_search 调用失败：联网搜索未启用")
+        print("请在 .env 中设置：ZHIPU_WEB_SEARCH_ENABLED=true")
+        raise SystemExit(1)
+
+    return _zhipu_web_search(query)
 
 
 def _zhipu_web_search(query: str) -> str:
@@ -48,7 +61,9 @@ def _zhipu_web_search(query: str) -> str:
     try:
         from zai import ZhipuAiClient
     except ImportError:
-        return f"【搜索失败】未安装 zai-sdk，请运行: pip install zai-sdk"
+        print("\n[错误] web_search 调用失败：未安装 zai-sdk")
+        print("请运行: pip install zai-sdk")
+        raise SystemExit(1)
 
     today = datetime.now().strftime("%Y年%m月%d日")
 
@@ -77,30 +92,16 @@ def _zhipu_web_search(query: str) -> str:
         content = response.choices[0].message.content
         if content:
             return f"【联网搜索结果】关于'{query}'：\n{content}"
-        return f"【搜索失败】未获取到关于'{query}'的搜索结果"
 
+        print(f"\n[错误] web_search 调用失败：未获取到关于'{query}'的搜索结果")
+        raise SystemExit(1)
+
+    except SystemExit:
+        raise
     except Exception as e:
-        return f"【搜索错误】搜索'{query}'时出错：{str(e)}"
-
-
-def _mock_web_search(query: str) -> str:
-    """模拟搜索结果（备用）"""
-    mock_results = {
-        "B2B SaaS": "B2B SaaS市场在2024年持续增长，全球市场规模预计达到3000亿美元。主要趋势：AI集成、垂直化解决方案、订阅模式优化。",
-        "东南亚": "东南亚数字经济快速发展，2025年预计达到3000亿美元规模。主要市场：印尼、越南、泰国、菲律宾。",
-        "IVD": "体外诊断（IVD）市场规模持续扩大，2024年全球市场约900亿美元。中国市场占比约15%，年增长率12%。",
-        "电商": "电商市场竞争激烈，2024年中国网络零售额超15万亿。获客成本持续上升。",
-        "内容营销": "内容营销ROI持续提升，2024年企业平均投入占比达25%。有效形式：短视频、长文深度内容、互动直播。",
-        "出海": "中国企业出海加速，2024年跨境电商交易额超2万亿。热门市场：东南亚、中东、拉美。",
-        "AI": "AI技术快速发展，2024年全球AI市场规模超5000亿美元。主要应用：大语言模型、计算机视觉、智能客服。",
-    }
-
-    query_lower = query.lower()
-    for key, result in mock_results.items():
-        if key.lower() in query_lower or key in query:
-            return f"【搜索结果】关于'{query}'：\n{result}"
-
-    return f"【搜索结果】关于'{query}'：建议关注行业最新动态、竞品分析、用户需求变化等维度进行深入研究。"
+        print(f"\n[错误] web_search 调用失败：搜索'{query}'时出错")
+        print(f"错误详情：{str(e)}")
+        raise SystemExit(1)
 
 
 def calculate(expression: Annotated[str, "数学表达式"]) -> Annotated[str, "计算结果"]:
