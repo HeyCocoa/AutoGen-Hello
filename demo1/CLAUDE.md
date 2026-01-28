@@ -4,37 +4,41 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is an AutoGen-based multi-agent system that generates topic strategy documents. It uses 4 specialized agents working in sequence to analyze business scenarios and produce structured content strategies in Markdown format.
+This is an AutoGen-based multi-agent system that generates topic strategy documents. It uses 4 specialized agents working in sequence (with a search-outline alignment step) to analyze business scenarios and produce structured content strategies in Markdown format.
 
 ## Core Architecture
 
 ### Multi-Agent Workflow (Sequential Execution)
 
-The system uses **4 distinct phases** with single-agent execution (no Coordinator):
+The system uses **5 phases** with single-agent execution (no Coordinator):
 
 1. **Clarification Phase** (`Clarifier`)
    - Analyzes user input completeness
    - May pause for user Q&A if information is insufficient
    - Outputs `【需要澄清】` or `【信息充分】`
 
-2. **Analysis Phase** (`Analyst`)
-   - Receives original input + any clarification responses
+2. **Search Outline Alignment** (`Analyst` -> `Critic`)
+   - Analyst outputs a **search outline only** (no tools)
+   - Critic approves or rejects; **must include industry pain points**
+
+3. **Analysis Phase** (`Analyst`)
+   - Receives original input + any clarification responses + approved outline
    - **Mandatory web search** (at least 3 searches): market trends, audience pain points, competitor practices
    - Performs deep business analysis + strategy recommendations
    - Output style: direct, opinionated, data-backed (no hedging words like "maybe", "perhaps")
 
-3. **Quality Check Phase** (`Critic`)
+4. **Quality Check Phase** (`Critic`)
    - Reviews analyst's conclusions from 4 dimensions: data reliability, logic gaps, blind spots, feasibility
    - **Can use web search** to verify or refute claims
    - Outputs: acknowledged points, questioned points, supplementary findings, correction suggestions
 
-4. **Writing Phase** (`Writer`)
+5. **Writing Phase** (`Writer`)
    - Integrates: base info + analyst output + critic output
    - **Preserves evidence chain**: citations, reasoning logic (because X, so Y), critic's challenges
    - Produces final Markdown document with `⚠️` annotations for disputed points
    - Includes "Key Data Summary" appendix for traceability
 
-**Key Implementation Detail**: Each phase creates a new `RoundRobinGroupChat` with single agent. Results from previous phases are passed via prompt context.
+**Key Implementation Detail**: Each phase creates a new `RoundRobinGroupChat` with a single agent. Results from previous phases are passed via prompt context.
 
 ### Prompt Management
 
@@ -48,7 +52,9 @@ All prompts are centralized in `app/prompts.py`:
 
 **Workflow Task Prompts (functions):**
 - `get_clarification_prompt(user_input)`
-- `get_analysis_prompt(user_input, additional_info)`
+- `get_search_outline_prompt(user_input, additional_info, critic_feedback)`
+- `get_outline_review_prompt(outline)`
+- `get_analysis_prompt(user_input, additional_info, approved_outline)`
 - `get_critic_prompt(analyst_output)`
 - `get_writing_prompt(user_input, additional_info, analyst_output, critic_output)`
 

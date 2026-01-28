@@ -26,6 +26,8 @@ from .agents import (
 )
 from .prompts import (
     get_clarification_prompt,
+    get_search_outline_prompt,
+    get_outline_review_prompt,
     get_analysis_prompt,
     get_critic_prompt,
     get_writing_prompt,
@@ -151,10 +153,77 @@ class TopicStrategyWorkflow:
         else:
             print("   信息充分，无需澄清\n")
 
-        # 阶段2：分析阶段（单 Agent，带工具调用）
-        print_phase_header("阶段2：业务分析", "bold green")
+        # 阶段2：搜索大纲（Analyst -> Critic 对齐）
+        print_phase_header("阶段2：搜索大纲对齐", "bold cyan")
 
-        analysis_prompt = get_analysis_prompt(user_input, additional_info)
+        approved_outline = ""
+        critic_feedback = ""
+        max_outline_rounds = 2
+
+        for round_index in range(max_outline_rounds):
+            outline_prompt = get_search_outline_prompt(user_input, additional_info, critic_feedback)
+
+            outline_team = RoundRobinGroupChat(
+                participants=[self.analyst],
+                max_turns=1,
+            )
+
+            outline_loading = start_loading("生成搜索大纲...")
+            outline_result = await stream_messages(
+                outline_team.run_stream(task=outline_prompt),
+                display=StreamDisplayConfig(
+                    show_agent_headers=True,
+                    show_content=True,
+                    show_tools=False,
+                    content_max_chars=400,
+                ),
+            )
+            stop_loading(outline_loading)
+
+            outline_output = _extract_agent_output(
+                outline_result, "Analyst", "警告：未找到 Analyst 的搜索大纲"
+            )
+
+            # Critic 审核大纲
+            review_prompt = get_outline_review_prompt(outline_output)
+            review_team = RoundRobinGroupChat(
+                participants=[self.critic],
+                max_turns=1,
+            )
+
+            review_loading = start_loading("质检搜索大纲...")
+            review_result = await stream_messages(
+                review_team.run_stream(task=review_prompt),
+                display=StreamDisplayConfig(
+                    show_agent_headers=True,
+                    show_content=True,
+                    show_tools=False,
+                    content_max_chars=300,
+                ),
+            )
+            stop_loading(review_loading)
+
+            review_output = _extract_agent_output(
+                review_result, "Critic", "警告：未找到 Critic 的审核结果"
+            )
+
+            if "【通过】" in review_output:
+                approved_outline = outline_output
+                print_success("搜索大纲通过")
+                break
+
+            critic_feedback = review_output
+            print("\n⚠️  搜索大纲被打回，需要修正后再提交。\n")
+
+        if not approved_outline:
+            approved_outline = outline_output
+            print("\n⚠️  搜索大纲多次未通过质检，将在提示风险后继续进入分析。\n")
+            print("   提醒：请在结果中重点核查“行业痛点/受众痛点/竞品做法”的数据来源。\n")
+
+        # 阶段3：分析阶段（单 Agent，带工具调用）
+        print_phase_header("阶段3：业务分析", "bold green")
+
+        analysis_prompt = get_analysis_prompt(user_input, additional_info, approved_outline)
 
         # Analyst 需要多轮来完成工具调用
         analysis_team = RoundRobinGroupChat(
@@ -179,8 +248,8 @@ class TopicStrategyWorkflow:
             analysis_result, "Analyst", "警告：未找到 Analyst 的输出"
         )
 
-        # 阶段3：质检阶段（单 Agent，可带工具）
-        print_phase_header("阶段3：质量检查", "bold magenta")
+        # 阶段4：质检阶段（单 Agent，可带工具）
+        print_phase_header("阶段4：质量检查", "bold magenta")
 
         critic_prompt = get_critic_prompt(analyst_output)
 
@@ -206,8 +275,8 @@ class TopicStrategyWorkflow:
             critic_result, "Critic", "警告：未找到 Critic 的输出"
         )
 
-        # 阶段4：文档撰写阶段（单 Agent）
-        print_phase_header("阶段4：文档生成", "bold blue")
+        # 阶段5：文档撰写阶段（单 Agent）
+        print_phase_header("阶段5：文档生成", "bold blue")
 
         writing_prompt = get_writing_prompt(user_input, additional_info, analyst_output, critic_output)
 

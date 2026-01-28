@@ -3,9 +3,13 @@
 提供Agent可以调用的工具函数
 """
 from datetime import datetime
+from threading import BoundedSemaphore
 from typing import Annotated
 
 from .config import Config
+
+# 限制并发搜索，避免过高并发触发上游错误
+_WEB_SEARCH_SEMAPHORE = BoundedSemaphore(3)
 
 
 def get_current_date() -> Annotated[str, "当前日期（YYYY-MM-DD格式）"]:
@@ -53,7 +57,11 @@ def web_search(query: Annotated[str, "搜索关键词"]) -> Annotated[str, "搜�
         print("请在 .env 中设置：ZHIPU_WEB_SEARCH_ENABLED=true")
         raise SystemExit(1)
 
-    return _zhipu_web_search(query)
+    _WEB_SEARCH_SEMAPHORE.acquire()
+    try:
+        return _zhipu_web_search(query)
+    finally:
+        _WEB_SEARCH_SEMAPHORE.release()
 
 
 def _zhipu_web_search(query: str) -> str:
