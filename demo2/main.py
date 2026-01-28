@@ -22,7 +22,7 @@ console = Console()
 def print_banner():
     """打印简洁提示"""
     banner = """
-# 🚀 科技媒体选题检索 Demo2
+# 向量检索 Demo
 输入关键词开始检索；输入 `help` 查看命令；输入 `exit` 退出。
 """
     console.print(Panel(Markdown(banner), border_style="cyan"))

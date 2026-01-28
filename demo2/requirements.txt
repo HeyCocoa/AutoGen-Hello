@@ -12,3 +12,6 @@ chromadb>=0.4.0
 
 # HTTP 请求
 requests>=2.31.0
+
+# 智谱AI SDK
+zai-sdk>=0.2.0
