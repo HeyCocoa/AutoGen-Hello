@@ -60,6 +60,8 @@ async def stream_messages(
     # 去重：记录已显示的工具调用和结果
     shown_tool_calls: Set[str] = set()
     shown_tool_results: Set[str] = set()
+    shown_text_messages: Set[str] = set()
+    last_text_by_source = {}
 
     async for message in stream:
         # 最终结果
@@ -91,7 +93,22 @@ async def stream_messages(
                     if display.allowed_sources is not None and source not in display.allowed_sources:
                         continue
                     if display.show_content:
-                        content = _truncate_text(message.content, display.content_max_chars)
+                        text_to_print = message.content
+                        last_text = last_text_by_source.get(source)
+                        if last_text:
+                            if text_to_print == last_text:
+                                continue
+                            if text_to_print.startswith(last_text):
+                                text_to_print = text_to_print[len(last_text):]
+                        last_text_by_source[source] = message.content
+                        if not text_to_print.strip():
+                            continue
+                        content = _truncate_text(text_to_print, display.content_max_chars)
+                        # 去重：避免同一段内容重复显示
+                        dedup_key = f"{source}:{len(content)}:{content[:200]}"
+                        if dedup_key in shown_text_messages:
+                            continue
+                        shown_text_messages.add(dedup_key)
                         print_content(content)
 
         elif message_type == "ToolCallRequestEvent":

@@ -16,7 +16,7 @@ from autogen_ext.models.openai import OpenAIChatCompletionClient
 from autogen_core.models import ModelCapabilities
 
 from .config import Config
-from .utils import stream_messages, StreamDisplayConfig
+from .utils import stream_messages, StreamDisplayConfig, print_content
 from .utils.rich_ui import print_phase_header, print_success, start_loading, stop_loading
 from .agents import (
     create_clarifier,
@@ -53,6 +53,14 @@ def _extract_agent_output(result, agent_name: str, fallback_warning: str) -> str
     if fallback_warning:
         print(f"   {fallback_warning}")
     return str(result.messages[-1].content)
+
+
+def _truncate_output(text: str, max_chars: int = 400) -> str:
+    """截断输出，避免终端被完整内容淹没"""
+    if not text or len(text) <= max_chars:
+        return text
+    omitted = len(text) - max_chars
+    return f"{text[:max_chars].rstrip()}... (truncated {omitted} chars)"
 
 
 class TopicStrategyWorkflow:
@@ -117,15 +125,17 @@ class TopicStrategyWorkflow:
         )
 
         clarification_loading = start_loading("确认中...")
-        clarification_result = await stream_messages(
-            clarification_team.run_stream(task=clarification_prompt),
-            display=StreamDisplayConfig(
-                show_agent_headers=True,
-                show_content=False,
-                show_tools=False,
-            ),
-        )
-        stop_loading(clarification_loading)
+        try:
+            clarification_result = await stream_messages(
+                clarification_team.run_stream(task=clarification_prompt),
+                display=StreamDisplayConfig(
+                    show_agent_headers=True,
+                    show_content=False,
+                    show_tools=False,
+                ),
+            )
+        finally:
+            stop_loading(clarification_loading)
         print_success("澄清阶段完成")
 
         clarifier_message = _extract_agent_output(
@@ -169,16 +179,18 @@ class TopicStrategyWorkflow:
             )
 
             outline_loading = start_loading("生成搜索大纲...")
-            outline_result = await stream_messages(
-                outline_team.run_stream(task=outline_prompt),
-                display=StreamDisplayConfig(
-                    show_agent_headers=True,
-                    show_content=True,
-                    show_tools=False,
-                    content_max_chars=400,
-                ),
-            )
-            stop_loading(outline_loading)
+            try:
+                outline_result = await stream_messages(
+                    outline_team.run_stream(task=outline_prompt),
+                    display=StreamDisplayConfig(
+                        show_agent_headers=True,
+                        show_content=True,
+                        show_tools=False,
+                        content_max_chars=400,
+                    ),
+                )
+            finally:
+                stop_loading(outline_loading)
 
             outline_output = _extract_agent_output(
                 outline_result, "Analyst", "警告：未找到 Analyst 的搜索大纲"
@@ -192,16 +204,18 @@ class TopicStrategyWorkflow:
             )
 
             review_loading = start_loading("质检搜索大纲...")
-            review_result = await stream_messages(
-                review_team.run_stream(task=review_prompt),
-                display=StreamDisplayConfig(
-                    show_agent_headers=True,
-                    show_content=True,
-                    show_tools=False,
-                    content_max_chars=300,
-                ),
-            )
-            stop_loading(review_loading)
+            try:
+                review_result = await stream_messages(
+                    review_team.run_stream(task=review_prompt),
+                    display=StreamDisplayConfig(
+                        show_agent_headers=True,
+                        show_content=True,
+                        show_tools=False,
+                        content_max_chars=300,
+                    ),
+                )
+            finally:
+                stop_loading(review_loading)
 
             review_output = _extract_agent_output(
                 review_result, "Critic", "警告：未找到 Critic 的审核结果"
@@ -232,16 +246,18 @@ class TopicStrategyWorkflow:
         )
 
         analysis_loading = start_loading("分析中（联网搜索）...")
-        analysis_result = await stream_messages(
-            analysis_team.run_stream(task=analysis_prompt),
-            display=StreamDisplayConfig(
-                show_agent_headers=True,
-                show_content=True,
-                show_tools=True,
-                content_max_chars=200,
-            ),
-        )
-        stop_loading(analysis_loading)
+        try:
+            analysis_result = await stream_messages(
+                analysis_team.run_stream(task=analysis_prompt),
+                display=StreamDisplayConfig(
+                    show_agent_headers=True,
+                    show_content=True,
+                    show_tools=True,
+                    content_max_chars=300,
+                ),
+            )
+        finally:
+            stop_loading(analysis_loading)
         print_success("分析阶段完成")
 
         analyst_output = _extract_agent_output(
@@ -259,21 +275,25 @@ class TopicStrategyWorkflow:
         )
 
         critic_loading = start_loading("质检中...")
-        critic_result = await stream_messages(
-            critic_team.run_stream(task=critic_prompt),
-            display=StreamDisplayConfig(
-                show_agent_headers=True,
-                show_content=True,
-                show_tools=True,
-                content_max_chars=200,
-            ),
-        )
-        stop_loading(critic_loading)
+        try:
+            critic_result = await stream_messages(
+                critic_team.run_stream(task=critic_prompt),
+                display=StreamDisplayConfig(
+                    show_agent_headers=True,
+                    show_content=True,
+                    show_tools=True,
+                    content_max_chars=300,
+                ),
+            )
+        finally:
+            stop_loading(critic_loading)
         print_success("质检阶段完成")
 
         critic_output = _extract_agent_output(
             critic_result, "Critic", "警告：未找到 Critic 的输出"
         )
+        # 兜底显示质检报告摘要，避免仅有工具输出
+        print_content(_truncate_output(critic_output, 400))
 
         # 阶段5：文档撰写阶段（单 Agent）
         print_phase_header("阶段5：文档生成", "bold blue")
@@ -286,15 +306,18 @@ class TopicStrategyWorkflow:
         )
 
         writing_loading = start_loading("文档生成中...")
-        writing_result = await stream_messages(
-            writing_team.run_stream(task=writing_prompt),
-            display=StreamDisplayConfig(
-                show_agent_headers=True,
-                show_content=True,
-                show_tools=False,
-            ),
-        )
-        stop_loading(writing_loading)
+        try:
+            writing_result = await stream_messages(
+                writing_team.run_stream(task=writing_prompt),
+                display=StreamDisplayConfig(
+                    show_agent_headers=True,
+                    show_content=True,
+                    show_tools=False,
+                    content_max_chars=400,
+                ),
+            )
+        finally:
+            stop_loading(writing_loading)
         print_success("文档生成阶段完成")
 
         writer_output = _extract_agent_output(
