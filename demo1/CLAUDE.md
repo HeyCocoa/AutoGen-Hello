@@ -63,15 +63,16 @@ When modifying agent behavior, edit the prompts in `app/prompts.py`. Agent files
 ### Model Client Configuration
 
 The system uses `OpenAIChatCompletionClient` from `autogen-ext[openai]`, which is **compatible with any OpenAI-format API**:
-- Default: 智谱AI GLM-4.7-flash (`https://open.bigmodel.cn/api/paas/v4`)
+- Default: 智谱AI GLM-4.7-flashx (`https://open.bigmodel.cn/api/paas/v4`)
 - Configuration via `.env`: `OPENAI_API_KEY`, `OPENAI_API_BASE`, `MODEL_NAME`
 
 ### Web Search (联网搜索)
 
 **REQUIRED** - The system requires 智谱AI web search to function:
 - Must be enabled via `ZHIPU_WEB_SEARCH_ENABLED=true` in `.env`
-- Uses `zai-sdk` to call GLM-4.7-flash with web_search tool
-- **No fallback** - if search fails or is disabled, program exits with `SystemExit(1)`
+- Uses `zai-sdk` to call the configured model with web_search tool
+- Concurrency limited to 1 request at a time to avoid API rate limits (429 errors)
+- Search failures return graceful error messages instead of crashing
 - Search engine configurable: `ZHIPU_SEARCH_ENGINE=search_std` (or `search_pro`)
 
 Agents with web search capability:
@@ -109,7 +110,7 @@ cp .env.example .env
 # Edit .env - all fields below are REQUIRED:
 # OPENAI_API_KEY=your-zhipu-api-key
 # OPENAI_API_BASE=https://open.bigmodel.cn/api/paas/v4
-# MODEL_NAME=glm-4.7-flash
+# MODEL_NAME=glm-4.7-flashx
 # ZHIPU_WEB_SEARCH_ENABLED=true
 ```
 
@@ -129,23 +130,21 @@ Generated documents are saved to `output/` (created automatically). Filename for
 
 ### Error Handling
 
-- `Config.validate()` raises `ValueError` if `OPENAI_API_KEY` is missing
-- `web_search()` calls `SystemExit(1)` if:
-  - Not using 智谱AI API
+- `Config.validate()` raises `ValueError` if:
+  - `OPENAI_API_KEY` is missing
+  - Not using 智谱AI API (bigmodel.cn)
   - `ZHIPU_WEB_SEARCH_ENABLED` is false
-  - `zai-sdk` not installed
-  - Search API call fails
+- `web_search()` returns error message (not crash) if search fails or returns empty
 
 ### File Structure
 
 ```
 app/
 ├── __main__.py          # Entry point
-├── config.py            # Environment config
-├── workflow.py          # 4-phase orchestration
+├── config.py            # Environment config (智谱AI only)
+├── workflow.py          # 5-phase orchestration
 ├── prompts.py           # All agent prompts (edit here to change behavior)
 ├── tools.py             # web_search, get_current_date, calculate
-├── models.py            # Pydantic models (reserved for future)
 ├── agents/
 │   ├── clarifier.py
 │   ├── analyst.py       # Has tools: web_search, get_current_date, calculate

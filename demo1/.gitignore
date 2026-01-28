@@ -18,6 +18,7 @@ ENV/
 *.swp
 *.swo
 *~
+.claude/
 
 # 输出文件
 !output/.gitkeep

@@ -8,28 +8,13 @@ from typing import Annotated
 
 from .config import Config
 
-# 限制并发搜索，避免过高并发触发上游错误
-_WEB_SEARCH_SEMAPHORE = BoundedSemaphore(3)
+# 限制并发搜索为1，避免触发智谱API限流（429错误）
+_WEB_SEARCH_SEMAPHORE = BoundedSemaphore(1)
 
 
 def get_current_date() -> Annotated[str, "当前日期（YYYY-MM-DD格式）"]:
-    """
-    获取当前日期，用于时效性分析
-
-    Returns:
-        当前日期字符串，格式：YYYY-MM-DD
-    """
+    """获取当前日期，用于时效性分析"""
     return datetime.now().strftime("%Y-%m-%d")
-
-
-def get_current_time() -> Annotated[str, "当前时间（HH:MM:SS格式）"]:
-    """
-    获取当前时间
-
-    Returns:
-        当前时间字符串，格式：HH:MM:SS
-    """
-    return datetime.now().strftime("%H:%M:%S")
 
 
 def web_search(query: Annotated[str, "搜索关键词"]) -> Annotated[str, "搜索结果摘要"]:
@@ -91,7 +76,7 @@ def _zhipu_web_search(query: str) -> str:
     try:
         client = ZhipuAiClient(api_key=Config.OPENAI_API_KEY)
         response = client.chat.completions.create(
-            model="glm-4.7-flash",
+            model=Config.MODEL_NAME,
             messages=messages,
             tools=tools,
             max_tokens=2048,
@@ -101,15 +86,13 @@ def _zhipu_web_search(query: str) -> str:
         if content:
             return f"【联网搜索结果】关于'{query}'：\n{content}"
 
-        print(f"\n[错误] web_search 调用失败：未获取到关于'{query}'的搜索结果")
-        raise SystemExit(1)
+        return f"【联网搜索结果】关于'{query}'：未找到相关信息"
 
     except SystemExit:
         raise
     except Exception as e:
-        print(f"\n[错误] web_search 调用失败：搜索'{query}'时出错")
-        print(f"错误详情：{str(e)}")
-        raise SystemExit(1)
+        print(f"\n[警告] web_search：搜索'{query}'时出错 - {str(e)}")
+        return f"【联网搜索结果】关于'{query}'：搜索失败，请尝试其他关键词"
 
 
 def calculate(expression: Annotated[str, "数学表达式"]) -> Annotated[str, "计算结果"]:
@@ -134,10 +117,4 @@ def calculate(expression: Annotated[str, "数学表达式"]) -> Annotated[str, "
         return f"计算错误：{str(e)}"
 
 
-# 导出所有工具
-__all__ = [
-    "get_current_date",
-    "get_current_time",
-    "web_search",
-    "calculate",
-]
+__all__ = ["get_current_date", "web_search", "calculate"]
