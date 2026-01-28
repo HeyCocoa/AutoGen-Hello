@@ -6,15 +6,19 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-EMBEDDING_CONFIG = {
-    "api_key": os.getenv("ZHIPUAI_API_KEY"),
-    "model": os.getenv("ZHIPUAI_EMBEDDING_MODEL", "embedding-3"),
-}
+# 智谱AI API Key (共用)
+ZHIPUAI_API_KEY = os.getenv("ZHIPUAI_API_KEY")
 
-CHROMADB_PATH = Path("./db")
+# Embedding 配置
+EMBEDDING_MODEL = os.getenv("ZHIPUAI_EMBEDDING_MODEL", "embedding-3")
+
+# 联网搜索配置
+WEB_SEARCH_ENABLED = os.getenv("ZHIPU_WEB_SEARCH_ENABLED", "false").lower() == "true"
+WEB_SEARCH_MODEL = os.getenv("ZHIPUAI_CHAT_MODEL", "glm-4.7-flash")
+WEB_SEARCH_ENGINE = os.getenv("ZHIPU_SEARCH_ENGINE", "search_std")
+
+# 数据库路径
+DB_DIR = Path("./db")
+CHROMADB_PATH = DB_DIR / "chromadb"
+SQLITE_DB_PATH = DB_DIR / "knowledge.db"
 COLLECTION_NAME = "knowledge_base"
-
-CHROMADB_CONFIG = {
-    "persist_directory": str(CHROMADB_PATH),
-    "collection_name": COLLECTION_NAME,
-}

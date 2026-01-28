@@ -1,138 +1,81 @@
-"""知识库初始化脚本：将 JSON 数据向量化并存入 Chromadb"""
-import io
-import json
+"""向量库重建脚本：清空向量库，将 SQLite 的 keyword 重新向量化"""
 import shutil
 import sys
-from pathlib import Path
+
+if sys.platform == "win32":
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
 import chromadb
 from chromadb.config import Settings
 
-if sys.platform == "win32":
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
-
-from config import CHROMADB_PATH, COLLECTION_NAME
+from config import CHROMADB_PATH, COLLECTION_NAME, SQLITE_DB_PATH
 from embedding_client import ZhipuAIEmbedding
+from knowledge_db import KnowledgeDB
 
 
-def load_knowledge_data() -> list:
-    """加载所有知识库数据"""
-    data_dir = Path(__file__).parent / "data"
-    all_data = []
+def rebuild_vector_db(batch_size: int = 10) -> int:
+    """清空向量库并重新导入 SQLite 全部 keyword（索引层）"""
+    if not SQLITE_DB_PATH.exists():
+        print("[WARN] SQLite 数据库不存在")
+        return 0
 
-    for json_file in sorted(data_dir.glob("knowledge_base_part*.json")):
-        print(f"[INFO] 加载文件: {json_file.name}")
-        with open(json_file, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            all_data.extend(data)
+    knowledge_db = KnowledgeDB()
+    total = knowledge_db.count()
+    if total == 0:
+        print("[WARN] SQLite 数据库为空")
+        return 0
 
-    print(f"[OK] 总共加载 {len(all_data)} 条知识")
-    return all_data
+    print(f"[INFO] SQLite 中共有 {total} 条数据")
 
-
-def init_chromadb():
-    """初始化 Chromadb 并插入数据"""
+    # 清空向量库
     if CHROMADB_PATH.exists():
         shutil.rmtree(CHROMADB_PATH)
+        print(f"[INFO] 已清空向量库")
 
+    # 创建新向量库
+    CHROMADB_PATH.mkdir(parents=True, exist_ok=True)
     client = chromadb.PersistentClient(
         path=str(CHROMADB_PATH),
         settings=Settings(anonymized_telemetry=False),
     )
-
     embedding_function = ZhipuAIEmbedding()
-
-    try:
-        client.delete_collection(name=COLLECTION_NAME)
-        print(f"[INFO] 删除旧集合: {COLLECTION_NAME}")
-    except Exception:
-        pass
-
     collection = client.create_collection(
         name=COLLECTION_NAME,
         embedding_function=embedding_function,
-        metadata={"description": "通用知识库"},
+        metadata={"description": "知识库索引"},
     )
     print(f"[OK] 创建新集合: {COLLECTION_NAME}")
 
-    knowledge_data = load_knowledge_data()
+    # 获取全部数据
+    with knowledge_db._get_conn() as conn:
+        cursor = conn.execute("SELECT id, keyword, content FROM web_knowledge ORDER BY id")
+        all_data = [dict(row) for row in cursor.fetchall()]
 
-    ids = []
-    documents = []
-    metadatas = []
-
-    for item in knowledge_data:
-        ids.append(item["id"])
-        doc_text = f"关键词: {item['keyword']}\n类别: {item['category']}\n内容: {item['content']}"
-        documents.append(doc_text)
-        metadatas.append({
-            "keyword": item["keyword"],
-            "category": item["category"],
-            "tags": ",".join(item["tags"]),
-        })
-
-    batch_size = 10
-    for i in range(0, len(ids), batch_size):
-        batch_ids = ids[i : i + batch_size]
-        batch_docs = documents[i : i + batch_size]
-        batch_metas = metadatas[i : i + batch_size]
-
+    # 批量插入（keyword + content）
+    synced_ids = []
+    for i in range(0, len(all_data), batch_size):
+        batch = all_data[i : i + batch_size]
         collection.add(
-            ids=batch_ids,
-            documents=batch_docs,
-            metadatas=batch_metas,
+            ids=[f"idx_{item['id']}" for item in batch],
+            documents=[f"{item['keyword']}: {item['content']}" for item in batch],
+            metadatas=[{"sqlite_id": item["id"], "keyword": item["keyword"]} for item in batch],
         )
-        print(f"[INFO] 插入进度: {min(i + batch_size, len(ids))}/{len(ids)}")
+        synced_ids.extend(item["id"] for item in batch)
+        print(f"[INFO] 进度: {min(i + batch_size, len(all_data))}/{len(all_data)}")
 
-    print(f"[OK] 知识库初始化完成！共 {len(ids)} 条数据")
+    # 标记全部为已同步
+    knowledge_db.mark_synced(synced_ids)
 
-    count = collection.count()
-    print(f"[INFO] 验证: 集合中共有 {count} 条数据")
-
-    return collection
-
-
-def test_query(collection) -> None:
-    """测试查询功能"""
-    print("\n" + "=" * 50)
-    print("[TEST] 测试查询功能")
-    print("=" * 50)
-
-    test_keywords = ["AI大模型", "区块链", "云计算"]
-
-    for keyword in test_keywords:
-        print(f"\n[QUERY] 查询关键词: {keyword}")
-        results = collection.query(
-            query_texts=[keyword],
-            n_results=3,
-        )
-
-        print(f"[RESULT] 找到 {len(results['ids'][0])} 条相关结果:")
-        for i, (doc_id, doc, metadata, distance) in enumerate(
-            zip(
-                results["ids"][0],
-                results["documents"][0],
-                results["metadatas"][0],
-                results["distances"][0],
-            ),
-            1,
-        ):
-            print(f"\n  [{i}] ID: {doc_id}")
-            print(f"      关键词: {metadata['keyword']}")
-            print(f"      类别: {metadata['category']}")
-            print(f"      相似度: {1 - distance:.4f}")
-            print(f"      内容预览: {doc[:100]}...")
+    print(f"[OK] 重建完成！共 {len(synced_ids)} 条索引")
+    return len(synced_ids)
 
 
 if __name__ == "__main__":
-    print("[START] 开始初始化知识库...")
     print("=" * 50)
-
-    db_collection = init_chromadb()
-
-    # test_query(db_collection)
-
-    print("\n" + "=" * 50)
-    print("[DONE] 知识库初始化完成！")
-    print("[INFO] 可以运行 python main.py 开始使用")
+    print("[START] 重建向量索引")
+    print("=" * 50)
+    count = rebuild_vector_db()
+    print("=" * 50)
+    print(f"[DONE] 完成，共 {count} 条")
     print("=" * 50)
