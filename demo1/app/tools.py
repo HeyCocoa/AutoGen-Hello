@@ -83,8 +83,15 @@ def _zhipu_web_search(query: str) -> str:
         )
 
         content = response.choices[0].message.content
+
+        # 提取搜索结果中的来源 URL
+        sources = _extract_search_sources(response)
+
         if content:
-            return f"【联网搜索结果】关于'{query}'：\n{content}"
+            result = f"【联网搜索结果】关于'{query}'：\n{content}"
+            if sources:
+                result += f"\n\n【来源】\n{sources}"
+            return result
 
         return f"【联网搜索结果】关于'{query}'：未找到相关信息"
 
@@ -93,6 +100,31 @@ def _zhipu_web_search(query: str) -> str:
     except Exception as e:
         print(f"\n[警告] web_search：搜索'{query}'时出错 - {str(e)}")
         return f"【联网搜索结果】关于'{query}'：搜索失败，请尝试其他关键词"
+
+
+def _extract_search_sources(response) -> str:
+    """从智谱API响应中提取搜索来源URL"""
+    try:
+        # 智谱API的web_search结果在 response.web_search 字段中
+        web_search_results = getattr(response, 'web_search', None)
+        if not web_search_results:
+            return ""
+
+        sources = []
+        for item in web_search_results:
+            title = getattr(item, 'title', '') or item.get('title', '') if isinstance(item, dict) else ''
+            link = getattr(item, 'link', '') or item.get('link', '') if isinstance(item, dict) else ''
+            media = getattr(item, 'media', '') or item.get('media', '') if isinstance(item, dict) else ''
+
+            if link:
+                if title:
+                    sources.append(f"- [{title}]({link})" + (f" ({media})" if media else ""))
+                else:
+                    sources.append(f"- {link}")
+
+        return "\n".join(sources[:5])  # 最多返回5个来源
+    except Exception:
+        return ""
 
 
 def calculate(expression: Annotated[str, "数学表达式"]) -> Annotated[str, "计算结果"]:
